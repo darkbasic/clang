@@ -5211,9 +5211,8 @@ void MSP430TargetCodeGenInfo::SetTargetAttributes(const Decl *D,
 
       // Step 3: Emit ISR vector alias.
       unsigned Num = attr->getNumber() / 2;
-      new llvm::GlobalAlias(GV->getType()->getElementType(),
-                            llvm::Function::ExternalLinkage,
-                            "__isr_" + Twine(Num), F, &M.getModule());
+      llvm::GlobalAlias::create(llvm::Function::ExternalLinkage,
+                                "__isr_" + Twine(Num), F);
     }
   }
 }
@@ -6760,8 +6759,6 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
 
     switch (Triple.getOS()) {
     case llvm::Triple::Win32:
-    case llvm::Triple::MinGW32:
-    case llvm::Triple::Cygwin:
       return *(TheTargetCodeGenInfo = new WinX86_64TargetCodeGenInfo(Types));
     case llvm::Triple::NaCl:
       return *(TheTargetCodeGenInfo = new NaClX86_64TargetCodeGenInfo(Types,
