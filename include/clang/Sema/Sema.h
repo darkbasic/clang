@@ -1036,10 +1036,6 @@ public:
   /// \brief Retrieve the module loader associated with the preprocessor.
   ModuleLoader &getModuleLoader() const;
 
-  ExprResult Owned(Expr* E) { return E; }
-  ExprResult Owned(ExprResult R) { return R; }
-  StmtResult Owned(Stmt* S) { return S; }
-
   void ActOnEndOfTranslationUnit();
 
   void CheckDelegatingCtorCycles();
@@ -2950,13 +2946,13 @@ public:
     return MakeFullExpr(Arg, Arg ? Arg->getExprLoc() : SourceLocation());
   }
   FullExprArg MakeFullExpr(Expr *Arg, SourceLocation CC) {
-    return FullExprArg(ActOnFinishFullExpr(Arg, CC).release());
+    return FullExprArg(ActOnFinishFullExpr(Arg, CC).get());
   }
   FullExprArg MakeFullDiscardedValueExpr(Expr *Arg) {
     ExprResult FE =
       ActOnFinishFullExpr(Arg, Arg ? Arg->getExprLoc() : SourceLocation(),
                           /*DiscardedValue*/ true);
-    return FullExprArg(FE.release());
+    return FullExprArg(FE.get());
   }
 
   StmtResult ActOnExprStmt(ExprResult Arg);
@@ -3932,7 +3928,7 @@ public:
         ///   potential exceptions of the special member function contains "any"
         EPI.ExceptionSpecType = EST_ComputedNoexcept;
         EPI.NoexceptExpr = Self->ActOnCXXBoolLiteral(SourceLocation(),
-                                                     tok::kw_false).take();
+                                                     tok::kw_false).get();
       }
     }
     FunctionProtoType::ExtProtoInfo getEPI() const {
@@ -7334,6 +7330,10 @@ public:
                                       SourceLocation StartLoc,
                                       SourceLocation LParenLoc,
                                       SourceLocation EndLoc);
+  /// \brief Called on well-formed 'collapse' clause.
+  OMPClause *ActOnOpenMPCollapseClause(Expr *Num, SourceLocation StartLoc,
+                                       SourceLocation LParenLoc,
+                                       SourceLocation EndLoc);
 
   OMPClause *ActOnOpenMPSimpleClause(OpenMPClauseKind Kind,
                                      unsigned Argument,
@@ -7383,6 +7383,13 @@ public:
                                      SourceLocation LParenLoc,
                                      SourceLocation ColonLoc,
                                      SourceLocation EndLoc);
+  /// \brief Called on well-formed 'aligned' clause.
+  OMPClause *ActOnOpenMPAlignedClause(ArrayRef<Expr *> VarList,
+                                      Expr *Alignment,
+                                      SourceLocation StartLoc,
+                                      SourceLocation LParenLoc,
+                                      SourceLocation ColonLoc,
+                                      SourceLocation EndLoc);
   /// \brief Called on well-formed 'copyin' clause.
   OMPClause *ActOnOpenMPCopyinClause(ArrayRef<Expr *> VarList,
                                      SourceLocation StartLoc,
@@ -7692,11 +7699,11 @@ public:
   QualType FindCompositePointerType(SourceLocation Loc,
                                     ExprResult &E1, ExprResult &E2,
                                     bool *NonStandardCompositeType = nullptr) {
-    Expr *E1Tmp = E1.take(), *E2Tmp = E2.take();
+    Expr *E1Tmp = E1.get(), *E2Tmp = E2.get();
     QualType Composite = FindCompositePointerType(Loc, E1Tmp, E2Tmp,
                                                   NonStandardCompositeType);
-    E1 = Owned(E1Tmp);
-    E2 = Owned(E2Tmp);
+    E1 = E1Tmp;
+    E2 = E2Tmp;
     return Composite;
   }
 
