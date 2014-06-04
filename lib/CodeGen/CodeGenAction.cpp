@@ -568,6 +568,7 @@ static raw_ostream *GetOutputStream(CompilerInstance &CI,
   case Backend_EmitNothing:
     return nullptr;
   case Backend_EmitMCNull:
+    return CI.createNullOutputFile();
   case Backend_EmitObj:
     return CI.createDefaultOutputFile(true, InFile, "o");
   }
