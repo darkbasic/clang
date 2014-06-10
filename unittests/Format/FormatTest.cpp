@@ -1900,6 +1900,10 @@ TEST_F(FormatTest, FormatsEnum) {
                    "\n"
                    "  THREE\n"
                    "}"));
+  verifyFormat("enum E { // comment\n"
+               "  ONE,\n"
+               "  TWO\n"
+               "};");
 }
 
 TEST_F(FormatTest, FormatsEnumsWithErrors) {
@@ -4167,6 +4171,12 @@ TEST_F(FormatTest, AlwaysBreakBeforeMultilineStrings) {
                "     L\"cccc\");",
                Break);
 
+  // As we break before unary operators, breaking right after them is bad.
+  verifyFormat("string foo = abc ? \"x\"\n"
+               "                   \"blah blah blah blah blah blah\"\n"
+               "                 : \"y\";",
+               Break);
+
   // Don't break if there is no column gain.
   verifyFormat("f(\"aaaa\"\n"
                "  \"bbbb\");",
@@ -5100,6 +5110,10 @@ TEST_F(FormatTest, FormatsArrays) {
 
   verifyGoogleFormat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa<int>\n"
                      "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa[aaaaaaaaaaaa];");
+  verifyFormat(
+      "aaaaaaaaaaa aaaaaaaaaaaaaaa = aaaaaaaaaaaaaaaaaaaaaaaaaa->aaaaaaaaa[0]\n"
+      "                                  .aaaaaaa[0]\n"
+      "                                  .aaaaaaaaaaaaaaaaaaaaaa();");
 }
 
 TEST_F(FormatTest, LineStartsWithSpecialCharacter) {
@@ -5404,7 +5418,8 @@ TEST_F(FormatTest, LayoutCxx11BraceInitializers) {
       "             BracedList{ // comment 1 (Forcing interesting break)\n"
       "                         param1, param2,\n"
       "                         // comment 2\n"
-      "                         param3, param4 });",
+      "                         param3, param4\n"
+      "             });",
       ExtraSpaces);
   verifyFormat(
       "std::this_thread::sleep_for(\n"
@@ -8702,6 +8717,9 @@ TEST_F(FormatTest, FormatsLambdas) {
                "               int j = 43;\n"
                "               return j;\n"
                "             });");
+
+  // More complex introducers.
+  verifyFormat("return [i, args...] {};");
 
   // Not lambdas.
   verifyFormat("constexpr char hello[]{\"hello\"};");
