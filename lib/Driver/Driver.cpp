@@ -152,9 +152,10 @@ const {
   Arg *PhaseArg = nullptr;
   phases::ID FinalPhase;
 
-  // -{E,M,MM} and /P only run the preprocessor.
+  // -{E,EP,P,M,MM} only run the preprocessor.
   if (CCCIsCPP() ||
       (PhaseArg = DAL.getLastArg(options::OPT_E)) ||
+      (PhaseArg = DAL.getLastArg(options::OPT__SLASH_EP)) ||
       (PhaseArg = DAL.getLastArg(options::OPT_M, options::OPT_MM)) ||
       (PhaseArg = DAL.getLastArg(options::OPT__SLASH_P))) {
     FinalPhase = phases::Preprocess;
@@ -1823,8 +1824,7 @@ std::string Driver::GetProgramPath(const char *Name,
 std::string Driver::GetTemporaryPath(StringRef Prefix, const char *Suffix)
   const {
   SmallString<128> Path;
-  llvm::error_code EC =
-      llvm::sys::fs::createTemporaryFile(Prefix, Suffix, Path);
+  std::error_code EC = llvm::sys::fs::createTemporaryFile(Prefix, Suffix, Path);
   if (EC) {
     Diag(clang::diag::err_unable_to_make_temp) << EC.message();
     return "";

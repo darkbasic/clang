@@ -1431,6 +1431,9 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
   if (!Class)
     return true;
 
+  // We haven't yet attached the base specifiers.
+  Class->setIsParsingBaseSpecifiers();
+
   // We do not support any C++11 attributes on base-specifiers yet.
   // Diagnose any attributes we see.
   if (!Attributes.empty()) {
@@ -4377,8 +4380,23 @@ static void checkDLLAttribute(Sema &S, CXXRecordDecl *Class) {
   // specialization bases.
 
   for (Decl *Member : Class->decls()) {
-    if (!isa<CXXMethodDecl>(Member) && !isa<VarDecl>(Member))
+    VarDecl *VD = dyn_cast<VarDecl>(Member);
+    CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Member);
+
+    // Only methods and static fields inherit the attributes.
+    if (!VD && !MD)
       continue;
+
+    // Don't process deleted methods.
+    if (MD && MD->isDeleted())
+      continue;
+
+    if (MD && MD->isMoveAssignmentOperator() && !ClassExported &&
+        MD->isInlined()) {
+      // Current MSVC versions don't export the move assignment operators, so
+      // don't attempt to import them if we have a definition.
+      continue;
+    }
 
     if (InheritableAttr *MemberAttr = getDLLAttr(Member)) {
       if (S.Context.getTargetInfo().getCXXABI().isMicrosoft() &&
@@ -4399,9 +4417,6 @@ static void checkDLLAttribute(Sema &S, CXXRecordDecl *Class) {
 
     if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Member)) {
       if (ClassExported) {
-        if (MD->isDeleted())
-          continue;
-
         if (MD->isUserProvided()) {
           // Instantiate non-default methods.
           S.MarkFunctionReferenced(Class->getLocation(), MD);
@@ -12450,7 +12465,9 @@ void Sema::MarkVTableUsed(SourceLocation Loc, CXXRecordDecl *Class,
         Class->hasUserDeclaredDestructor() &&
         !Class->getDestructor()->isDefined() &&
         !Class->getDestructor()->isDeleted()) {
-      CheckDestructor(Class->getDestructor());
+      CXXDestructorDecl *DD = Class->getDestructor();
+      ContextRAII SavedContext(*this, DD);
+      CheckDestructor(DD);
     }
   }
 

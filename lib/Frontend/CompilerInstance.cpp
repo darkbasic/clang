@@ -35,6 +35,7 @@
 #include "clang/Serialization/GlobalModuleIndex.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CrashRecoveryContext.h"
+#include "llvm/Support/Errc.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/LockFileManager.h"
@@ -44,8 +45,8 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/system_error.h"
 #include <sys/stat.h>
+#include <system_error>
 #include <time.h>
 
 using namespace clang;
@@ -454,8 +455,8 @@ void CompilerInstance::clearOutputFiles(bool EraseFiles) {
         // If '-working-directory' was passed, the output filename should be
         // relative to that.
         FileMgr->FixupRelativePath(NewOutFile);
-        if (llvm::error_code ec = llvm::sys::fs::rename(it->TempFilename,
-                                                        NewOutFile.str())) {
+        if (std::error_code ec =
+                llvm::sys::fs::rename(it->TempFilename, NewOutFile.str())) {
           getDiagnostics().Report(diag::err_unable_to_rename_temp)
             << it->TempFilename << it->Filename << ec.message();
 
@@ -568,7 +569,7 @@ CompilerInstance::createOutputFile(StringRef OutputPath,
     TempPath = OutFile;
     TempPath += "-%%%%%%%%";
     int fd;
-    llvm::error_code EC =
+    std::error_code EC =
         llvm::sys::fs::createUniqueFile(TempPath.str(), fd, TempPath);
 
     if (CreateMissingDirectories &&
@@ -665,7 +666,7 @@ bool CompilerInstance::InitializeSourceManager(const FrontendInputFile &Input,
         SourceMgr.createFileID(File, SourceLocation(), Kind));
   } else {
     std::unique_ptr<llvm::MemoryBuffer> SB;
-    if (llvm::error_code ec = llvm::MemoryBuffer::getSTDIN(SB)) {
+    if (std::error_code ec = llvm::MemoryBuffer::getSTDIN(SB)) {
       Diags.Report(diag::err_fe_error_reading_stdin) << ec.message();
       return false;
     }
@@ -1051,7 +1052,7 @@ static void pruneModuleCache(const HeaderSearchOptions &HSOpts) {
 
   // Walk the entire module cache, looking for unused module files and module
   // indices.
-  llvm::error_code EC;
+  std::error_code EC;
   SmallString<128> ModuleCachePathNative;
   llvm::sys::path::native(HSOpts.ModuleCachePath, ModuleCachePathNative);
   for (llvm::sys::fs::directory_iterator
