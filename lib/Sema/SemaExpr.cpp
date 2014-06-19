@@ -83,9 +83,16 @@ static void DiagnoseUnusedOfDecl(Sema &S, NamedDecl *D, SourceLocation Loc) {
 
 static AvailabilityResult DiagnoseAvailabilityOfDecl(Sema &S,
                               NamedDecl *D, SourceLocation Loc,
-                              const ObjCInterfaceDecl *UnknownObjCClass) {
+                              const ObjCInterfaceDecl *UnknownObjCClass,
+                              bool ObjCPropertyAccess) {
   // See if this declaration is unavailable or deprecated.
   std::string Message;
+    
+  // Forward class declarations get their attributes from their definition.
+  if (ObjCInterfaceDecl *IDecl = dyn_cast<ObjCInterfaceDecl>(D)) {
+    if (IDecl->getDefinition())
+      D = IDecl->getDefinition();
+  }
   AvailabilityResult Result = D->getAvailability(&Message);
   if (const EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(D))
     if (Result == AR_Available) {
@@ -113,13 +120,15 @@ static AvailabilityResult DiagnoseAvailabilityOfDecl(Sema &S,
     case AR_Deprecated:
       if (S.getCurContextAvailability() != AR_Deprecated)
         S.EmitAvailabilityWarning(Sema::AD_Deprecation,
-                                  D, Message, Loc, UnknownObjCClass, ObjCPDecl);
+                                  D, Message, Loc, UnknownObjCClass, ObjCPDecl,
+                                  ObjCPropertyAccess);
       break;
 
     case AR_Unavailable:
       if (S.getCurContextAvailability() != AR_Unavailable)
         S.EmitAvailabilityWarning(Sema::AD_Unavailable,
-                                  D, Message, Loc, UnknownObjCClass, ObjCPDecl);
+                                  D, Message, Loc, UnknownObjCClass, ObjCPDecl,
+                                  ObjCPropertyAccess);
       break;
 
     }
@@ -251,7 +260,8 @@ void Sema::MaybeSuggestAddingStaticToDecl(const FunctionDecl *Cur) {
 /// referenced), false otherwise.
 ///
 bool Sema::DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
-                             const ObjCInterfaceDecl *UnknownObjCClass) {
+                             const ObjCInterfaceDecl *UnknownObjCClass,
+                             bool ObjCPropertyAccess) {
   if (getLangOpts().CPlusPlus && isa<FunctionDecl>(D)) {
     // If there were any diagnostics suppressed by template argument deduction,
     // emit them now.
@@ -296,7 +306,7 @@ bool Sema::DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
         DeduceReturnType(FD, Loc))
       return true;
   }
-  DiagnoseAvailabilityOfDecl(*this, D, Loc, UnknownObjCClass);
+  DiagnoseAvailabilityOfDecl(*this, D, Loc, UnknownObjCClass, ObjCPropertyAccess);
 
   DiagnoseUnusedOfDecl(*this, D, Loc);
 
@@ -8139,7 +8149,8 @@ QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
       else {
         Expr *E = RHS.get();
         if (getLangOpts().ObjCAutoRefCount)
-          CheckObjCARCConversion(SourceRange(), LHSType, E, CCK_ImplicitConversion);
+          CheckObjCARCConversion(SourceRange(), LHSType, E, CCK_ImplicitConversion, false,
+                                 Opc);
         RHS = ImpCastExprToType(E, LHSType,
                                 LPT ? CK_BitCast :CK_CPointerToObjCPointerCast);
       }

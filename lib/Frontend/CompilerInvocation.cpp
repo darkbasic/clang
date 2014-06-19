@@ -550,17 +550,6 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.DependentLibraries = Args.getAllArgValues(OPT_dependent_lib);
 
-  if (Arg *A = Args.getLastArg(OPT_Rpass_EQ)) {
-    StringRef Val = A->getValue();
-    std::string RegexError;
-    Opts.OptimizationRemarkPattern = std::make_shared<llvm::Regex>(Val);
-    if (!Opts.OptimizationRemarkPattern->isValid(RegexError)) {
-      Diags.Report(diag::err_drv_optimization_remark_pattern)
-          << RegexError << A->getAsString(Args);
-      Opts.OptimizationRemarkPattern.reset();
-    }
-  }
-
   if (Arg *A = Args.getLastArg(OPT_Rpass_EQ))
     Opts.OptimizationRemarkPattern =
         GenerateOptimizationRemarkRegex(Diags, Args, A);
@@ -1135,6 +1124,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
   Opts.CPlusPlus = Std.isCPlusPlus();
   Opts.CPlusPlus11 = Std.isCPlusPlus11();
   Opts.CPlusPlus1y = Std.isCPlusPlus1y();
+  Opts.CPlusPlus1z = Std.isCPlusPlus1z();
   Opts.Digraphs = Std.hasDigraphs();
   Opts.GNUMode = Std.isGNUMode();
   Opts.GNUInline = !Std.isC99();

@@ -1408,7 +1408,7 @@ public:
                          IdentifierInfo **CorrectedII = nullptr);
   TypeSpecifierType isTagName(IdentifierInfo &II, Scope *S);
   bool isMicrosoftMissingTypename(const CXXScopeSpec *SS, Scope *S);
-  bool DiagnoseUnknownTypeName(IdentifierInfo *&II,
+  void DiagnoseUnknownTypeName(IdentifierInfo *&II,
                                SourceLocation IILoc,
                                Scope *S,
                                CXXScopeSpec *SS,
@@ -3211,7 +3211,8 @@ public:
                                NamedDecl *D, StringRef Message,
                                SourceLocation Loc,
                                const ObjCInterfaceDecl *UnknownObjCClass,
-                               const ObjCPropertyDecl  *ObjCProperty);
+                               const ObjCPropertyDecl  *ObjCProperty,
+                               bool ObjCPropertyAccess);
 
   void HandleDelayedAvailabilityCheck(sema::DelayedDiagnostic &DD, Decl *Ctx);
 
@@ -3223,7 +3224,8 @@ public:
 
   bool CanUseDecl(NamedDecl *D);
   bool DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
-                         const ObjCInterfaceDecl *UnknownObjCClass=nullptr);
+                         const ObjCInterfaceDecl *UnknownObjCClass=nullptr,
+                         bool ObjCPropertyAccess=false);
   void NoteDeletedFunction(FunctionDecl *FD);
   std::string getDeletedOrUnavailableSuffix(const FunctionDecl *FD);
   bool DiagnosePropertyAccessorMismatch(ObjCPropertyDecl *PD,
@@ -7310,6 +7312,11 @@ public:
                                       Stmt *AStmt,
                                       SourceLocation StartLoc,
                                       SourceLocation EndLoc);
+  /// \brief Called on well-formed '\#pragma omp for' after parsing
+  /// of the associated statement.
+  StmtResult ActOnOpenMPForDirective(ArrayRef<OMPClause *> Clauses, Stmt *AStmt,
+                                     SourceLocation StartLoc,
+                                     SourceLocation EndLoc);
 
   OMPClause *ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind,
                                          Expr *Expr,
@@ -7813,7 +7820,9 @@ public:
   ARCConversionResult CheckObjCARCConversion(SourceRange castRange,
                                              QualType castType, Expr *&op,
                                              CheckedConversionKind CCK,
-                                             bool DiagnoseCFAudited = false);
+                                             bool DiagnoseCFAudited = false,
+                                             BinaryOperatorKind Opc = BO_PtrMemD
+                                             );
 
   Expr *stripARCUnbridgedCast(Expr *e);
   void diagnoseARCUnbridgedCast(Expr *e);

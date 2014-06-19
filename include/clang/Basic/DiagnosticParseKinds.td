@@ -333,8 +333,6 @@ def warn_vector_long_decl_spec_combination : Warning<
   "Use of 'long' with '__vector' is deprecated">, InGroup<Deprecated>;
 def err_friend_invalid_in_context : Error<
   "'friend' used outside of class">;
-def err_unknown_typename : Error<
-  "unknown type name %0">;
 def err_use_of_tag_name_without_tag : Error<
   "must use '%1' tag to refer to type %0%select{| in this scope}2">;
 def err_templated_using_directive : Error<
@@ -566,6 +564,13 @@ def err_expected_comma_greater : Error<
   "expected ',' or '>' in template-parameter-list">;
 def err_class_on_template_template_param : Error<
   "template template parameter requires 'class' after the parameter list">;
+def ext_template_template_param_typename : ExtWarn<
+  "template template parameter using 'typename' is a C++1z extension">,
+  InGroup<CXX1z>;
+def warn_cxx1y_compat_template_template_param_typename : Warning<
+  "template template parameter using 'typename' is "
+  "incompatible with C++ standards before C++1z">,
+  InGroup<CXXPre1zCompat>, DefaultIgnore;
 def err_template_spec_syntax_non_template : Error<
   "identifier followed by '<' indicates a class template specialization but "
   "%0 %select{does not refer to a template|refers to a function template|"
