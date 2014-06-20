@@ -1945,6 +1945,14 @@ void OMPClauseEnqueue::VisitOMPDefaultClause(const OMPDefaultClause *C) { }
 
 void OMPClauseEnqueue::VisitOMPProcBindClause(const OMPProcBindClause *C) { }
 
+void OMPClauseEnqueue::VisitOMPScheduleClause(const OMPScheduleClause *C) {
+  Visitor->AddStmt(C->getChunkSize());
+}
+
+void OMPClauseEnqueue::VisitOMPOrderedClause(const OMPOrderedClause *) {}
+
+void OMPClauseEnqueue::VisitOMPNowaitClause(const OMPNowaitClause *) {}
+
 template<typename T>
 void OMPClauseEnqueue::VisitOMPClauseList(T *Node) {
   for (const auto *I : Node->varlists())
@@ -2577,8 +2585,6 @@ static void fatal_error_handler(void *user_data, const std::string& reason,
 }
 
 static void initializeLibClang() {
-  // Install our error handler, and make sure multi-threading is enabled.
-  llvm::llvm_start_multithreaded();
   llvm::install_fatal_error_handler(fatal_error_handler, nullptr);
 }
 
