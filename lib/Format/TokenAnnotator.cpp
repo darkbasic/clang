@@ -164,6 +164,8 @@ private:
           CurrentToken->Previous->Previous->isOneOf(tok::l_paren,
                                                     tok::coloncolon))
         MightBeFunctionType = true;
+      if (CurrentToken->Previous->Type == TT_BinaryOperator)
+        Contexts.back().IsExpression = true;
       if (CurrentToken->is(tok::r_paren)) {
         if (MightBeFunctionType && CurrentToken->Next &&
             (CurrentToken->Next->is(tok::l_paren) ||
@@ -901,7 +903,7 @@ private:
       return TT_UnaryOperator;
 
     const FormatToken *NextToken = Tok.getNextNonComment();
-    if (!NextToken)
+    if (!NextToken || NextToken->is(tok::l_brace))
       return TT_Unknown;
 
     if (PrevToken->is(tok::coloncolon) ||
@@ -1315,7 +1317,7 @@ unsigned TokenAnnotator::splitPenalty(const AnnotatedLine &Line,
   if (Right.is(tok::l_square)) {
     if (Style.Language == FormatStyle::LK_Proto)
       return 1;
-    if (Right.Type != TT_ObjCMethodExpr)
+    if (Right.Type != TT_ObjCMethodExpr && Right.Type != TT_LambdaLSquare)
       return 500;
   }
   if (Right.Type == TT_StartOfName || Right.is(tok::kw_operator)) {

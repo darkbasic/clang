@@ -314,6 +314,19 @@ void CodeGenModule::clear() {
   DeferredDeclsToEmit.clear();
 }
 
+void InstrProfStats::reportDiagnostics(DiagnosticsEngine &Diags,
+                                       StringRef MainFile) {
+  if (!hasDiagnostics())
+    return;
+  if (VisitedInMainFile > 0 && VisitedInMainFile == MissingInMainFile) {
+    if (MainFile.empty())
+      MainFile = "<stdin>";
+    Diags.Report(diag::warn_profile_data_unprofiled) << MainFile;
+  } else
+    Diags.Report(diag::warn_profile_data_out_of_date) << Visited << Missing
+                                                      << Mismatched;
+}
+
 void CodeGenModule::Release() {
   EmitDeferred();
   applyReplacements();
@@ -327,9 +340,8 @@ void CodeGenModule::Release() {
   if (getCodeGenOpts().ProfileInstrGenerate)
     if (llvm::Function *PGOInit = CodeGenPGO::emitInitialization(*this))
       AddGlobalCtor(PGOInit, 0);
-  if (PGOReader && PGOStats.isOutOfDate())
-    getDiags().Report(diag::warn_profile_data_out_of_date)
-        << PGOStats.Visited << PGOStats.Missing << PGOStats.Mismatched;
+  if (PGOReader && PGOStats.hasDiagnostics())
+    PGOStats.reportDiagnostics(getDiags(), getCodeGenOpts().MainFileName);
   EmitCtorList(GlobalCtors, "llvm.global_ctors");
   EmitCtorList(GlobalDtors, "llvm.global_dtors");
   EmitGlobalAnnotations();
@@ -354,7 +366,7 @@ void CodeGenModule::Release() {
 
   // We need to record the widths of enums and wchar_t, so that we can generate
   // the correct build attributes in the ARM backend.
-	llvm::Triple::ArchType Arch = Context.getTargetInfo().getTriple().getArch();
+  llvm::Triple::ArchType Arch = Context.getTargetInfo().getTriple().getArch();
   if (   Arch == llvm::Triple::arm
       || Arch == llvm::Triple::armeb
       || Arch == llvm::Triple::thumb

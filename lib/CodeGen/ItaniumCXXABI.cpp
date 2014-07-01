@@ -232,7 +232,7 @@ public:
   llvm::Function *getOrCreateThreadLocalWrapper(const VarDecl *VD,
                                                 llvm::GlobalVariable *Var);
   void EmitThreadLocalInitFuncs(
-      llvm::ArrayRef<std::pair<const VarDecl *, llvm::GlobalVariable *> > Decls,
+      ArrayRef<std::pair<const VarDecl *, llvm::GlobalVariable *> > Decls,
       llvm::Function *InitFunc) override;
   LValue EmitThreadLocalVarDeclLValue(CodeGenFunction &CGF, const VarDecl *VD,
                                       QualType LValType) override;
@@ -1782,7 +1782,7 @@ void ItaniumCXXABI::registerGlobalDtor(CodeGenFunction &CGF,
 }
 
 /// Get the appropriate linkage for the wrapper function. This is essentially
-/// the weak form of the variable's linkage; every translation unit which wneeds
+/// the weak form of the variable's linkage; every translation unit which needs
 /// the wrapper emits a copy, and we want the linker to merge them.
 static llvm::GlobalValue::LinkageTypes
 getThreadLocalWrapperLinkage(const VarDecl *VD, CodeGen::CodeGenModule &CGM) {
@@ -1831,7 +1831,7 @@ ItaniumCXXABI::getOrCreateThreadLocalWrapper(const VarDecl *VD,
 }
 
 void ItaniumCXXABI::EmitThreadLocalInitFuncs(
-    llvm::ArrayRef<std::pair<const VarDecl *, llvm::GlobalVariable *> > Decls,
+    ArrayRef<std::pair<const VarDecl *, llvm::GlobalVariable *> > Decls,
     llvm::Function *InitFunc) {
   for (unsigned I = 0, N = Decls.size(); I != N; ++I) {
     const VarDecl *VD = Decls[I].first;

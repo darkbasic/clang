@@ -950,8 +950,8 @@ static void getMipsCPUAndABI(const ArgList &Args,
   if (!ABIName.empty()) {
     // Deduce CPU name from ABI name.
     CPUName = llvm::StringSwitch<const char *>(ABIName)
-      .Cases("32", "o32", "eabi", DefMips32CPU)
-      .Cases("n32", "n64", "64", DefMips64CPU)
+      .Cases("o32", "eabi", DefMips32CPU)
+      .Cases("n32", "n64", DefMips64CPU)
       .Default("");
   }
   else if (!CPUName.empty()) {
@@ -1156,6 +1156,7 @@ static std::string getPPCTargetCPU(const ArgList &Args) {
       .Case("power6", "pwr6")
       .Case("power6x", "pwr6x")
       .Case("power7", "pwr7")
+      .Case("power8", "pwr8")
       .Case("pwr3", "pwr3")
       .Case("pwr4", "pwr4")
       .Case("pwr5", "pwr5")
@@ -1163,6 +1164,7 @@ static std::string getPPCTargetCPU(const ArgList &Args) {
       .Case("pwr6", "pwr6")
       .Case("pwr6x", "pwr6x")
       .Case("pwr7", "pwr7")
+      .Case("pwr8", "pwr8")
       .Case("powerpc", "ppc")
       .Case("powerpc64", "ppc64")
       .Case("powerpc64le", "ppc64le")
@@ -1426,9 +1428,13 @@ static void getX86TargetFeatures(const llvm::Triple &Triple,
     Features.push_back("-fsgsbase");
   }
 
+  // Add features to comply with gcc on Android
   if (Triple.getEnvironment() == llvm::Triple::Android) {
-    // Add sse3 feature to comply with gcc on Android
-    Features.push_back("+sse3");
+    if (Triple.getArch() == llvm::Triple::x86_64) {
+      Features.push_back("+sse4.2");
+      Features.push_back("+popcnt");
+    } else
+      Features.push_back("+ssse3");
   }
 
   // Now add any that the user explicitly requested on the command line,
@@ -2033,23 +2039,21 @@ static void addLsanRT(const ToolChain &TC, const ArgList &Args,
 static void addUbsanRT(const ToolChain &TC, const ArgList &Args,
                        ArgStringList &CmdArgs, bool IsCXX,
                        bool HasOtherSanitizerRt) {
-  // Export symbols if we're not building a shared library. This allows two
-  // models: either every DSO containing ubsan-sanitized code contains the
-  // ubsan runtime, or the main executable does (or both).
-  const bool ExportSymbols = !Args.hasArg(options::OPT_shared);
+  // Do not link runtime into shared libraries.
+  if (Args.hasArg(options::OPT_shared))
+    return;
 
   // Need a copy of sanitizer_common. This could come from another sanitizer
   // runtime; if we're not including one, include our own copy.
   if (!HasOtherSanitizerRt)
     addSanitizerRTLinkFlags(TC, Args, CmdArgs, "san", true, false);
 
-  addSanitizerRTLinkFlags(TC, Args, CmdArgs, "ubsan", false, ExportSymbols);
+  addSanitizerRTLinkFlags(TC, Args, CmdArgs, "ubsan", false, true);
 
   // Only include the bits of the runtime which need a C++ ABI library if
   // we're linking in C++ mode.
   if (IsCXX)
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "ubsan_cxx", false,
-                            ExportSymbols);
+    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "ubsan_cxx", false, true);
 }
 
 static void addDfsanRT(const ToolChain &TC, const ArgList &Args,
@@ -2425,6 +2429,27 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     case llvm::Triple::x86_64:
       PIC = true; // "-fPIC"
       IsPICLevelTwo = true;
+      break;
+
+    default:
+      break;
+    }
+  }
+
+  // OpenBSD-specific defaults for PIE
+  if (getToolChain().getTriple().getOS() == llvm::Triple::OpenBSD) {
+    switch (getToolChain().getTriple().getArch()) {
+    case llvm::Triple::mips64:
+    case llvm::Triple::mips64el:
+    case llvm::Triple::sparc:
+    case llvm::Triple::x86:
+    case llvm::Triple::x86_64:
+      IsPICLevelTwo = false; // "-fpie"
+      break;
+
+    case llvm::Triple::ppc:
+    case llvm::Triple::sparcv9:
+      IsPICLevelTwo = true; // "-fPIE"
       break;
 
     default:
@@ -3819,9 +3844,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // Add exception args.
-  addExceptionArgs(Args, InputType, getToolChain().getTriple(),
-                   KernelOrKext, objcRuntime, CmdArgs);
+  // Handle GCC-style exception args.
+  if (!C.getDriver().IsCLMode())
+    addExceptionArgs(Args, InputType, getToolChain().getTriple(), KernelOrKext,
+                     objcRuntime, CmdArgs);
 
   if (getToolChain().UseSjLjExceptions())
     CmdArgs.push_back("-fsjlj-exceptions");
@@ -4157,9 +4183,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT__SLASH_fallback) &&
       Output.getType() == types::TY_Object &&
       (InputType == types::TY_C || InputType == types::TY_CXX)) {
-    tools::visualstudio::Compile CL(getToolChain());
-    Command *CLCommand = CL.GetCommand(C, JA, Output, Inputs, Args,
-                                       LinkingOutput);
+    Command *CLCommand = getCLFallback()->GetCommand(C, JA, Output, Inputs,
+                                                     Args, LinkingOutput);
     // RTTI support in clang-cl is a work in progress.  Fall back to MSVC early
     // if we are using 'clang-cl /fallback /GR'.
     // FIXME: Remove this when RTTI is finished.
@@ -4326,6 +4351,45 @@ ObjCRuntime Clang::AddObjCRuntimeArgs(const ArgList &args,
   return runtime;
 }
 
+static bool maybeConsumeDash(const std::string &EH, size_t &I) {
+  bool HaveDash = (I + 1 < EH.size() && EH[I + 1] == '-');
+  I += HaveDash;
+  return !HaveDash;
+}
+
+struct EHFlags {
+  EHFlags() : Synch(false), Asynch(false), NoExceptC(false) {}
+  bool Synch;
+  bool Asynch;
+  bool NoExceptC;
+};
+
+/// /EH controls whether to run destructor cleanups when exceptions are
+/// thrown.  There are three modifiers:
+/// - s: Cleanup after "synchronous" exceptions, aka C++ exceptions.
+/// - a: Cleanup after "asynchronous" exceptions, aka structured exceptions.
+///      The 'a' modifier is unimplemented and fundamentally hard in LLVM IR.
+/// - c: Assume that extern "C" functions are implicitly noexcept.  This
+///      modifier is an optimization, so we ignore it for now.
+/// The default is /EHs-c-, meaning cleanups are disabled.
+static EHFlags parseClangCLEHFlags(const Driver &D, const ArgList &Args) {
+  EHFlags EH;
+  std::vector<std::string> EHArgs = Args.getAllArgValues(options::OPT__SLASH_EH);
+  for (auto EHVal : EHArgs) {
+    for (size_t I = 0, E = EHVal.size(); I != E; ++I) {
+      switch (EHVal[I]) {
+      case 'a': EH.Asynch = maybeConsumeDash(EHVal, I); continue;
+      case 'c': EH.NoExceptC = maybeConsumeDash(EHVal, I); continue;
+      case 's': EH.Synch = maybeConsumeDash(EHVal, I); continue;
+      default: break;
+      }
+      D.Diag(clang::diag::err_drv_invalid_value) << "/EH" << EHVal;
+      break;
+    }
+  }
+  return EH;
+}
+
 void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
   unsigned RTOptionID = options::OPT__SLASH_MT;
 
@@ -4378,13 +4442,20 @@ void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
   if (!Args.hasArg(options::OPT_frtti, options::OPT_fno_rtti))
     CmdArgs.push_back("-fno-rtti");
 
+  const Driver &D = getToolChain().getDriver();
+  EHFlags EH = parseClangCLEHFlags(D, Args);
+  // FIXME: Do something with NoExceptC.
+  if (EH.Synch || EH.Asynch) {
+    CmdArgs.push_back("-fexceptions");
+    CmdArgs.push_back("-fcxx-exceptions");
+  }
+
   // /EP should expand to -E -P.
   if (Args.hasArg(options::OPT__SLASH_EP)) {
     CmdArgs.push_back("-E");
     CmdArgs.push_back("-P");
   }
 
-  const Driver &D = getToolChain().getDriver();
   Arg *MostGeneralArg = Args.getLastArg(options::OPT__SLASH_vmg);
   Arg *BestCaseArg = Args.getLastArg(options::OPT__SLASH_vmb);
   if (MostGeneralArg && BestCaseArg)
@@ -4421,6 +4492,12 @@ void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
     else
       CmdArgs.push_back("msvc");
   }
+}
+
+visualstudio::Compile *Clang::getCLFallback() const {
+  if (!CLFallback)
+    CLFallback.reset(new visualstudio::Compile(getToolChain()));
+  return CLFallback.get();
 }
 
 void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
@@ -5102,6 +5179,22 @@ bool mips::hasMipsAbiArg(const ArgList &Args, const char *Value) {
   return A && (A->getValue() == StringRef(Value));
 }
 
+bool mips::isNaN2008(const ArgList &Args) {
+  if (Arg *NaNArg = Args.getLastArg(options::OPT_mnan_EQ))
+    return llvm::StringSwitch<bool>(NaNArg->getValue())
+               .Case("2008", true)
+               .Case("legacy", false)
+               .Default(false);
+
+  // NaN2008 is the default for MIPS32r6/MIPS64r6.
+  if (Arg *CPUArg = Args.getLastArg(options::OPT_mcpu_EQ))
+    return llvm::StringSwitch<bool>(CPUArg->getValue())
+               .Cases("mips32r6", "mips64r6", true)
+               .Default(false);
+
+  return false;
+}
+
 llvm::Triple::ArchType darwin::getArchTypeForMachOArchName(StringRef Str) {
   // See arch(3) and llvm-gcc's driver-driver.c. We don't implement support for
   // archs which Darwin doesn't use.
@@ -5571,7 +5664,7 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddAllArgs(CmdArgs, options::OPT_F);
 
   const char *Exec =
-    Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+    Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -5761,7 +5854,7 @@ void solaris::Link::ConstructJob(Compilation &C, const JobAction &JA,
   addProfileRT(getToolChain(), Args, CmdArgs);
 
   const char *Exec =
-    Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+    Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -5869,7 +5962,7 @@ void auroraux::Link::ConstructJob(Compilation &C, const JobAction &JA,
   addProfileRT(getToolChain(), Args, CmdArgs);
 
   const char *Exec =
-    Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+    Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -6071,7 +6164,7 @@ void openbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec =
-    Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+    Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -6207,7 +6300,7 @@ void bitrig::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec =
-    Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+    Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -6471,7 +6564,7 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   addProfileRT(ToolChain, Args, CmdArgs);
 
   const char *Exec =
-    Args.MakeArgString(ToolChain.GetProgramPath("ld"));
+    Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -6724,7 +6817,7 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   addProfileRT(getToolChain(), Args, CmdArgs);
 
-  const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+  const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -6921,14 +7014,17 @@ static StringRef getLinuxDynamicLinker(const ArgList &Args,
     else
       return "/lib/ld-linux.so.3";              /* TODO: check which dynamic linker name.  */
   } else if (ToolChain.getArch() == llvm::Triple::mips ||
-             ToolChain.getArch() == llvm::Triple::mipsel)
+             ToolChain.getArch() == llvm::Triple::mipsel) {
+    if (mips::isNaN2008(Args))
+      return "/lib/ld-linux-mipsn8.so.1";
     return "/lib/ld.so.1";
-  else if (ToolChain.getArch() == llvm::Triple::mips64 ||
-           ToolChain.getArch() == llvm::Triple::mips64el) {
+  } else if (ToolChain.getArch() == llvm::Triple::mips64 ||
+             ToolChain.getArch() == llvm::Triple::mips64el) {
     if (mips::hasMipsAbiArg(Args, "n32"))
-      return "/lib32/ld.so.1";
-    else
-      return "/lib64/ld.so.1";
+      return mips::isNaN2008(Args) ? "/lib32/ld-linux-mipsn8.so.1"
+                                   : "/lib32/ld.so.1";
+    return mips::isNaN2008(Args) ? "/lib64/ld-linux-mipsn8.so.1"
+                                 : "/lib64/ld.so.1";
   } else if (ToolChain.getArch() == llvm::Triple::ppc)
     return "/lib/ld.so.1";
   else if (ToolChain.getArch() == llvm::Triple::ppc64 ||
@@ -7114,6 +7210,7 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   Args.AddAllArgs(CmdArgs, options::OPT_L);
+  Args.AddAllArgs(CmdArgs, options::OPT_u);
 
   const ToolChain::path_list Paths = ToolChain.getFilePaths();
 
@@ -7278,7 +7375,7 @@ void minix::Link::ConstructJob(Compilation &C, const JobAction &JA,
          Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
   }
 
-  const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+  const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -7456,7 +7553,7 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   addProfileRT(getToolChain(), Args, CmdArgs);
 
-  const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("ld"));
+  const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
@@ -7552,14 +7649,9 @@ static std::string FindFallback(const char *FallbackName,
   if (!OptPath.hasValue())
     return FallbackName;
 
-#ifdef LLVM_ON_WIN32
-  const StringRef PathSeparators = ";";
-#else
-  const StringRef PathSeparators = ":";
-#endif
-
+  const char EnvPathSeparatorStr[] = {llvm::sys::EnvPathSeparator, '\0'};
   SmallVector<StringRef, 8> PathSegments;
-  llvm::SplitString(OptPath.getValue(), PathSegments, PathSeparators);
+  llvm::SplitString(OptPath.getValue(), PathSegments, EnvPathSeparatorStr);
 
   for (size_t i = 0, e = PathSegments.size(); i != e; ++i) {
     const StringRef &PathSegment = PathSegments[i];
@@ -7633,6 +7725,7 @@ Command *visualstudio::Compile::GetCommand(Compilation &C, const JobAction &JA,
   // Flags that can simply be passed through.
   Args.AddAllArgs(CmdArgs, options::OPT__SLASH_LD);
   Args.AddAllArgs(CmdArgs, options::OPT__SLASH_LDd);
+  Args.AddAllArgs(CmdArgs, options::OPT__SLASH_EH);
 
   // The order of these flags is relevant, so pick the last one.
   if (Arg *A = Args.getLastArg(options::OPT__SLASH_MD, options::OPT__SLASH_MDd,
