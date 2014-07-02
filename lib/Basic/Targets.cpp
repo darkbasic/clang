@@ -572,7 +572,7 @@ protected:
   void getVisualStudioDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
     if (Opts.CPlusPlus) {
-      if (Opts.RTTI)
+      if (Opts.RTTIData)
         Builder.defineMacro("_CPPRTTI");
 
       if (Opts.Exceptions)
@@ -3292,10 +3292,8 @@ public:
     ComplexLongDoubleUsesFP2Ret = true;
 
     // x86-64 has atomics up to 16 bytes.
-    // FIXME: Once the backend is fixed, increase MaxAtomicInlineWidth to 128
-    // on CPUs with cmpxchg16b
     MaxAtomicPromoteWidth = 128;
-    MaxAtomicInlineWidth = 64;
+    MaxAtomicInlineWidth = 128;
   }
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::X86_64ABIBuiltinVaList;
