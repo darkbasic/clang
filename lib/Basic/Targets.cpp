@@ -5309,12 +5309,18 @@ public:
                     getTriple().getArch() == llvm::Triple::mipsel;
     CPU = Name;
     return llvm::StringSwitch<bool>(Name)
+        .Case("mips1", IsMips32)
+        .Case("mips2", IsMips32)
+        .Case("mips3", true)
+        .Case("mips4", true)
+        .Case("mips5", true)
         .Case("mips32", IsMips32)
         .Case("mips32r2", IsMips32)
         .Case("mips32r6", IsMips32)
         .Case("mips64", true)
         .Case("mips64r2", true)
         .Case("mips64r6", true)
+        .Case("octeon", true)
         .Default(false);
   }
   const std::string& getCPU() const { return CPU; }
@@ -5327,7 +5333,10 @@ public:
     Features["n64"] = false;
 
     Features[ABI] = true;
-    Features[CPU] = true;
+    if (CPU == "octeon")
+      Features["mips64r2"] = Features["cnmips"] = true;
+    else
+      Features[CPU] = true;
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -6379,8 +6388,9 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
 
 /// CreateTargetInfo - Return the target info object for the specified target
 /// triple.
-TargetInfo *TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
-                                         TargetOptions *Opts) {
+TargetInfo *
+TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
+                             const std::shared_ptr<TargetOptions> &Opts) {
   llvm::Triple Triple(Opts->Triple);
 
   // Construct the target
@@ -6389,7 +6399,7 @@ TargetInfo *TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
     Diags.Report(diag::err_target_unknown_triple) << Triple.str();
     return nullptr;
   }
-  Target->setTargetOpts(Opts);
+  Target->TargetOpts = Opts;
 
   // Set the target CPU if specified.
   if (!Opts->CPU.empty() && !Target->setCPU(Opts->CPU)) {
